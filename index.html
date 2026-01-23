@@ -1,103 +1,270 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>日本リアルタイム地震マップ</title>
+<meta charset="UTF-8">
+<title>地震情報ダッシュボード</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Leaflet CSS -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-pvL+mkSylfWz6b6F2o7vNR+0Pe+aOK0SbUDNG4x0CP8="
-    crossorigin=""
-  />
+<style>
+html,body{
+  margin:0;
+  background:#020617;
+  font-family:system-ui;
+  color:#fff;
+}
 
-  <style>
-    html, body { margin:0; padding:0; width:100%; height:100%; font-family:"Noto Sans JP",sans-serif; }
-    #map { width:100%; height:100vh; }
-  </style>
+/* ===== 外枠 ===== */
+.dashboard{
+  width:95vw;
+  height:90vh;
+  margin:3vh auto;
+  background:#0b1220;
+  border-radius:16px;
+  box-shadow:0 0 40px rgba(0,0,0,.6);
+  padding:12px;
+  box-sizing:border-box;
+}
+
+/* ===== レイアウト ===== */
+.layout{
+  display:grid;
+  grid-template-columns:320px 1fr;
+  gap:12px;
+  height:100%;
+}
+
+/* ===== 左情報 ===== */
+.panel{
+  background:#111827;
+  border-radius:12px;
+  padding:14px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.card{
+  background:#1f2937;
+  border-radius:10px;
+  padding:12px;
+}
+.max{
+  font-size:48px;
+  font-weight:800;
+}
+.label{
+  font-size:14px;
+  opacity:.7;
+}
+
+/* ===== 地図 ===== */
+.map-box{
+  background:#081018;
+  border-radius:12px;
+  position:relative;
+  overflow:hidden;
+}
+#map{
+  width:100%;
+  height:100%;
+  transition:viewBox .6s cubic-bezier(.4,0,.2,1);
+}
+
+/* ===== 都道府県 ===== */
+.pref{
+  fill:#1f2937;
+  stroke:#374151;
+  stroke-width:1;
+}
+
+/* ===== 震度色 ===== */
+.i1{fill:#3b82f6}
+.i2{fill:#22c55e}
+.i3{fill:#facc15}
+.i4{fill:#fb923c}
+.i5{fill:#ef4444}
+.i6{fill:#7f1d1d}
+
+/* ===== 数字ラベル ===== */
+.label-box rect{
+  width:28px;
+  height:24px;
+  x:-14px;
+  y:-18px;
+  rx:6;
+  ry:6;
+  opacity:.95;
+}
+.label-box text{
+  fill:#fff;
+  font-size:16px;
+  font-weight:800;
+  text-anchor:middle;
+  dominant-baseline:middle;
+  y:-6px;
+}
+
+/* ===== 震源 ✖（アニメなし） ===== */
+#epicenter{
+  fill:#ef4444;
+  font-size:42px;
+  font-weight:900;
+  pointer-events:none;
+}
+</style>
 </head>
+
 <body>
-  <div id="map"></div>
 
-  <!-- Leaflet JS -->
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-o9N1j8bmB0Lt2fGmJ3WfJGi6zTm5nsldtF+v7Lr8GpM="
-    crossorigin=""
-  ></script>
+<div class="dashboard">
+  <div class="layout">
 
-  <script>
-    // Leaflet 地図初期化（日本中心）
-    const map = L.map("map").setView([36,138],5);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
-      attribution:"&copy; OpenStreetMap contributors",
-    }).addTo(map);
+    <div class="panel">
+      <div class="card">
+        <div class="label">最大震度</div>
+        <div id="max" class="max">-</div>
+      </div>
 
-    const quakeLayer = L.layerGroup().addTo(map);
+      <div class="card">
+        <div id="hypo">震源 ---</div>
+        <div id="mag">M -.-</div>
+        <div id="depth">深さ --km</div>
+        <div id="time">--</div>
+        <div id="tsunami">---</div>
+      </div>
 
-    // P2P地震情報 API v2: 551 = JMA地震
-    const API_URL = "https://api.p2pquake.net/v2/history?codes=551&limit=20";
+      <div class="label">※ P2PQuake 過去地震情報（参考）</div>
+    </div>
 
-    // 震度 → 色
-    function intensityColor(intensity){
-      if(!intensity) return "gray";
-      if(intensity >= 6) return "red";
-      if(intensity >= 5) return "orange";
-      if(intensity >= 4) return "yellow";
-      if(intensity >= 3) return "green";
-      if(intensity >= 2) return "blue";
-      return "gray";
-    }
+    <div class="map-box">
+      <svg id="map" viewBox="0 0 1000 1600"></svg>
+    </div>
 
-    async function loadQuakes(){
-      try{
-        const res = await fetch(API_URL);
-        const data = await res.json();
-        quakeLayer.clearLayers();
+  </div>
+</div>
 
-        if(!data || data.length===0) return;
+<script>
+(() => {
 
-        data.forEach(item=>{
-          const quake = item.earthquake;
-          const hypo = quake.hypocenter;
-          const intensity = quake.maxInt; // 最大震度
-          if(!hypo || !hypo.latitude || !hypo.longitude) return;
+const API = "https://api.p2pquake.net/v2/jma/quake?limit=1";
+const svg = document.getElementById("map");
 
-          const lat = parseFloat(hypo.latitude);
-          const lng = parseFloat(hypo.longitude);
-          const mag = quake.magnitude || 0;
-          const place = hypo.name || "不明";
-          const timeStr = quake.time || "";
+const BASE_VIEWBOX = { w:1000, h:1600 };
+const ZOOM_LEVEL = 0.35;
+const ZOOM_PADDING = 80;
 
-          const color = intensityColor(intensity);
-          const radius = mag*3 + intensity*2; // 大きさに震度も反映
+let prefectures={}, centers={};
 
-          const marker = L.circleMarker([lat,lng],{
-            radius,
-            color,
-            fillOpacity:0.6,
-            weight:1
-          }).addTo(quakeLayer);
+/* ===== 日本地図 ===== */
+fetch("https://raw.githubusercontent.com/dataofjapan/land/master/japan.geojson")
+  .then(r=>r.json())
+  .then(initMap);
 
-          marker.bindPopup(
-            `<b>${place}</b><br>
-             マグニチュード: ${mag}<br>
-             最大震度: ${intensity || "不明"}<br>
-             発生時刻: ${timeStr}`
-          );
-        });
-      }catch(err){
-        console.error("地震情報取得エラー:", err);
-      }
-    }
+function initMap(geo){
+  geo.features.forEach(f=>{
+    const name=f.properties.name_ja;
+    const p=document.createElementNS("http://www.w3.org/2000/svg","path");
+    p.setAttribute("d",geoPath(f.geometry));
+    p.setAttribute("class","pref");
+    svg.appendChild(p);
+    prefectures[name]=p;
+    centers[name]=centroid(f.geometry.coordinates);
+  });
+  update();
+  setInterval(update,10000);
+}
 
-    // 初回ロード
-    loadQuakes();
+/* ===== 更新 ===== */
+function update(){
+  fetch(API)
+    .then(r=>r.json())
+    .then(d=>render(d[0]));
+}
 
-    // 1分ごとに更新
-    setInterval(loadQuakes,60000);
-  </script>
+/* ===== 描画 ===== */
+function render(d){
+  const e=d.earthquake,h=e.hypocenter;
+
+  document.getElementById("max").textContent=e.maxScale;
+  document.getElementById("hypo").textContent="震源 "+h.name;
+  document.getElementById("mag").textContent="M "+h.magnitude;
+  document.getElementById("depth").textContent="深さ "+h.depth+"km";
+  document.getElementById("time").textContent=new Date(e.time).toLocaleString("ja-JP");
+  document.getElementById("tsunami").textContent=
+    e.domesticTsunami==="None"?"津波の心配なし":"津波注意";
+
+  Object.values(prefectures).forEach(p=>p.setAttribute("class","pref"));
+  document.querySelectorAll(".label-box,#epicenter").forEach(el=>el.remove());
+
+  /* 震度ラベル */
+  d.points?.forEach(p=>{
+    const pref=prefectures[p.pref];
+    if(!pref) return;
+    pref.classList.add("i"+p.scale);
+
+    const c=centers[p.pref];
+    const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    g.setAttribute("class","label-box i"+p.scale);
+    g.setAttribute("transform",`translate(${c[0]},${c[1]})`);
+
+    const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
+    const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.textContent=p.scale;
+
+    g.appendChild(r);
+    g.appendChild(t);
+    svg.appendChild(g);
+  });
+
+  /* ===== 震源 ✖（固定、アニメなし） ===== */
+  const pos = geoToXY(h.latitude,h.longitude);
+  const x = document.createElementNS("http://www.w3.org/2000/svg","text");
+  x.setAttribute("id","epicenter");
+  x.setAttribute("x",pos[0]);
+  x.setAttribute("y",pos[1]);
+  x.textContent="✕";
+  svg.appendChild(x);
+
+  zoomToEpicenter(pos[0],pos[1]);
+}
+
+/* ===== ズーム ===== */
+function zoomToEpicenter(cx,cy){
+  let w = BASE_VIEWBOX.w * ZOOM_LEVEL + ZOOM_PADDING*2;
+  let h = BASE_VIEWBOX.h * ZOOM_LEVEL + ZOOM_PADDING*2;
+
+  let vx = cx - w/2;
+  let vy = cy - h/2;
+
+  vx = Math.max(0, Math.min(vx, BASE_VIEWBOX.w - w));
+  vy = Math.max(0, Math.min(vy, BASE_VIEWBOX.h - h));
+
+  svg.setAttribute("viewBox",`${vx} ${vy} ${w} ${h}`);
+}
+
+/* ===== 座標変換 ===== */
+function geoToXY(lat,lon){
+  return [
+    (lon-122)/(146-122)*1000,
+    (46-lat)/(46-24)*1600
+  ];
+}
+function geoPath(g){
+  return g.coordinates.map(p=>p.map(r=>r.map((c,i)=>
+    (i?"L":"M")+geoToXY(c[1],c[0]).join(",")
+  ).join(" ")+" Z").join(" ")).join(" ");
+}
+function centroid(c){
+  const f=c.flat(2);
+  let x=0,y=0;
+  f.forEach(p=>{
+    const q=geoToXY(p[1],p[0]);
+    x+=q[0]; y+=q[1];
+  });
+  return [x/f.length, y/f.length];
+}
+
+})();
+</script>
+
 </body>
 </html>
