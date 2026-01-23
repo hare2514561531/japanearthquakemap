@@ -3,28 +3,58 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>日本リアルタイム地震マップ</title>
+<title>日本リアルタイム地震マップ（スマホ対応）</title>
+
+<!-- Leaflet CSS -->
 <link
   rel="stylesheet"
   href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
 />
+
 <style>
-  html,body{margin:0;padding:0;width:100%;height:100%;font-family:sans-serif;}
-  #map{width:100%;height:100vh;}
+  html, body {
+    margin:0; padding:0; width:100%; height:100%; font-family:"Noto Sans JP",sans-serif;
+  }
+
+  /* 地図を全画面表示 */
+  #map {
+    width:100%;
+    height:100vh;
+  }
+
+  /* ポップアップのフォントサイズをスマホでも見やすく */
+  .leaflet-popup-content {
+    font-size: 14px;
+    line-height: 1.3;
+  }
+
+  /* モバイル向けポップアップ内の文字調整 */
+  @media (max-width: 600px) {
+    .leaflet-popup-content {
+      font-size: 16px;
+    }
+  }
 </style>
 </head>
 <body>
+
 <div id="map"></div>
+
+<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
+  // 地図初期化（日本中心）
   const map = L.map("map").setView([36,138],5);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+
+  // OSM タイル
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution:"&copy; OpenStreetMap contributors"
   }).addTo(map);
 
   const quakeLayer = L.layerGroup().addTo(map);
 
-  // サンプルデータ（最低限マーカー表示）
+  // サンプルデータ（必ず表示されるように）
   const sampleQuakes = [
     {lat:35.6895,lng:139.6917,mag:4.5,place:"東京",intensity:4,time:"2026-01-23 12:00"},
     {lat:34.6937,lng:135.5023,mag:3.2,place:"大阪",intensity:3,time:"2026-01-23 11:45"}
@@ -46,17 +76,26 @@
       const color = intensityColor(q.intensity);
       const radius = q.mag*3 + (q.intensity||0)*2;
       const marker = L.circleMarker([q.lat,q.lng],{
-        radius,color,fillOpacity:0.6,weight:1
+        radius,
+        color,
+        fillOpacity:0.6,
+        weight:1
       }).addTo(quakeLayer);
-      marker.bindPopup(`<b>${q.place}</b><br>M${q.mag}<br>最大震度:${q.intensity}<br>${q.time}`);
+      marker.bindPopup(
+        `<b>${q.place}</b><br>
+         マグニチュード: ${q.mag}<br>
+         最大震度: ${q.intensity || "不明"}<br>
+         発生時刻: ${q.time}`
+      );
     });
   }
 
-  // まずサンプル表示
+  // 最初にサンプル表示
   showQuakes(sampleQuakes);
 
-  // その後リアルタイムAPIを読み込む（空の場合はサンプルのまま）
+  // リアルタイム API
   const API_URL = "https://api.p2pquake.net/v2/history?codes=551&limit=20";
+
   async function loadQuakes(){
     try{
       const res = await fetch(API_URL);
@@ -83,7 +122,7 @@
   // 1分ごとに更新
   setInterval(loadQuakes,60000);
   loadQuakes();
-
 </script>
+
 </body>
 </html>
