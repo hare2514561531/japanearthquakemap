@@ -14,62 +14,90 @@
   />
 
   <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; font-family: "Noto Sans JP", sans-serif; }
-    #map { width: 100%; height: 100vh; }
+    html, body { margin:0; padding:0; width:100%; height:100%; font-family:"Noto Sans JP",sans-serif; }
+    #map { width:100%; height:100vh; }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-o9N1j8bmB0Lt2fGmJ3WfJGi6zTm5nsldtF+v7Lr8GpM="
-          crossorigin=""></script>
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-o9N1j8bmB0Lt2fGmJ3WfJGi6zTm5nsldtF+v7Lr8GpM="
+    crossorigin=""
+  ></script>
 
   <script>
-    const map = L.map("map").setView([36, 138], 5);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
+    // Leaflet 地図初期化（日本中心）
+    const map = L.map("map").setView([36,138],5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      attribution:"&copy; OpenStreetMap contributors",
     }).addTo(map);
 
     const quakeLayer = L.layerGroup().addTo(map);
+
+    // P2P地震情報 API v2: 551 = JMA地震
     const API_URL = "https://api.p2pquake.net/v2/history?codes=551&limit=20";
 
-    async function loadQuakes() {
-      try {
+    // 震度 → 色
+    function intensityColor(intensity){
+      if(!intensity) return "gray";
+      if(intensity >= 6) return "red";
+      if(intensity >= 5) return "orange";
+      if(intensity >= 4) return "yellow";
+      if(intensity >= 3) return "green";
+      if(intensity >= 2) return "blue";
+      return "gray";
+    }
+
+    async function loadQuakes(){
+      try{
         const res = await fetch(API_URL);
         const data = await res.json();
         quakeLayer.clearLayers();
 
-        if (!data || data.length === 0) return;
+        if(!data || data.length===0) return;
 
-        data.forEach(item => {
+        data.forEach(item=>{
           const quake = item.earthquake;
           const hypo = quake.hypocenter;
-          if (!hypo || !hypo.latitude || !hypo.longitude) return;
+          const intensity = quake.maxInt; // 最大震度
+          if(!hypo || !hypo.latitude || !hypo.longitude) return;
 
           const lat = parseFloat(hypo.latitude);
           const lng = parseFloat(hypo.longitude);
           const mag = quake.magnitude || 0;
           const place = hypo.name || "不明";
           const timeStr = quake.time || "";
-          const color = mag >= 5 ? "red" : mag >= 3 ? "orange" : "yellow";
 
-          const marker = L.circleMarker([lat, lng], {
-            radius: mag * 3,
+          const color = intensityColor(intensity);
+          const radius = mag*3 + intensity*2; // 大きさに震度も反映
+
+          const marker = L.circleMarker([lat,lng],{
+            radius,
             color,
-            fillOpacity: 0.6,
-            weight: 1
+            fillOpacity:0.6,
+            weight:1
           }).addTo(quakeLayer);
 
-          marker.bindPopup(`<b>${place}</b><br>M${mag}<br>${timeStr}`);
+          marker.bindPopup(
+            `<b>${place}</b><br>
+             マグニチュード: ${mag}<br>
+             最大震度: ${intensity || "不明"}<br>
+             発生時刻: ${timeStr}`
+          );
         });
-      } catch (err) {
-        console.error("Error loading quake data:", err);
+      }catch(err){
+        console.error("地震情報取得エラー:", err);
       }
     }
 
+    // 初回ロード
     loadQuakes();
-    setInterval(loadQuakes, 60000);
+
+    // 1分ごとに更新
+    setInterval(loadQuakes,60000);
   </script>
 </body>
 </html>
